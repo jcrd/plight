@@ -2,11 +2,7 @@ import io
 import logging
 import subprocess
 
-from PIL import Image, ImageStat
-
-
-def clamp(v, bot, top):
-    return max(min(v, top), bot)
+from PIL import Image
 
 
 class Device:
@@ -23,7 +19,7 @@ class Device:
             stderr=subprocess.DEVNULL,
         )
 
-    def get_brightness(self):
+    def get_brightness_percentage(self):
         logging.debug("Device: getting brightness")
         ps = subprocess.run(
             f"ffmpeg -i {self.path} -vframes 1 -f image2pipe -".split(),
@@ -31,7 +27,12 @@ class Device:
         )
         im = Image.open(io.BytesIO(ps.stdout))
         im = im.convert("L")
-        return ImageStat.Stat(im).rms[0]
+        histogram = im.histogram()
+        pixels = sum(histogram)
+        br = scale = len(histogram)
 
-    def get_brightness_percentage(self):
-        return clamp(self.get_brightness() / Device.max_brightness, 0.0, 1.0)
+        for i in range(0, scale):
+            ratio = histogram[i] / pixels
+            br += ratio * (-scale + i)
+
+        return 1 if br == 255 else br / scale
