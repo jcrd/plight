@@ -6,7 +6,7 @@ from pathlib import Path
 import tomllib
 from gi.repository import GLib
 
-from plight.backlight import Backlight
+from plight.backlight import Backlight, DDCBacklight
 from plight.device import Device
 from plight.logind import Logind
 
@@ -14,9 +14,10 @@ WAKEUP_DELAY = 1 * 1000
 
 default_config = {
     "update_interval": 5,
-    "brightness_curve": [0.001, 0.005, 0.01, 0.1, 0.2, 0.5, 0.6, 0.8, 0.9, 1.0],
+    "brightness_curve": [0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.6, 0.8, 0.9, 1.0],
     "device_name": "video0",
     "backlight_name": "intel_backlight",
+    "ddcutil": True,
 }
 
 
@@ -24,15 +25,23 @@ class Updater:
     def __init__(self, config):
         self.source = None
         self.dev = Device(config["device_name"])
-        self.bl = Backlight(config["backlight_name"])
         self.logind = Logind(self.on_start)
-        self.brightness_curve = config["brightness_curve"]
         self.update_interval = config["update_interval"]
+        self.brightness_curve = config["brightness_curve"]
+
+        self.ddcutil = config["ddcutil"]
+
+        if self.ddcutil:
+            self.bl = DDCBacklight()
+        else:
+            self.bl = Backlight(config["backlight_name"],
+                                self.logind.set_brightness)
 
         self.on_start()
 
     def wakeup_update(self):
-        self.dev.wakeup()
+        if not self.ddcutil:
+            self.dev.wakeup()
         self.update()
 
     def on_start(self):
@@ -45,7 +54,7 @@ class Updater:
         idx = max(round(per * len(self.brightness_curve)) - 1, 0)
         cv = self.brightness_curve[idx]
         logging.debug(f"Updater: setting backlight {cv} (ambient {per})")
-        self.logind.set_brightness(self.bl.name, self.bl.max_brightness * cv)
+        self.bl.set_brightness(cv)
 
         self.source = GLib.timeout_add(self.update_interval * 60 * 1000, self.update)
 
